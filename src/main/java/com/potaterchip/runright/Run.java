@@ -6,6 +6,7 @@ import java.util.Date;
  * Created by Eric on 4/25/2014.
  */
 public class Run {
+    private long mId;
     private Date mStartDate;
 
     public Run() {
@@ -18,6 +19,14 @@ public class Run {
 
     public void setStartDate(Date startDate) {
         mStartDate = startDate;
+    }
+
+    public void setId(long id) {
+        mId = id;
+    }
+
+    public long getId() {
+        return mId;
     }
 
     public int getDurationSeconds(Long endMillis) {
