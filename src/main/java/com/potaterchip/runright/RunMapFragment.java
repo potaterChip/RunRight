@@ -2,6 +2,7 @@ package com.potaterchip.runright;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.location.Location;
@@ -34,7 +35,7 @@ import java.util.Date;
 public class RunMapFragment extends SupportMapFragment implements LoaderManager.LoaderCallbacks<Cursor>{
     private static final String ARG_RUN_ID = "RUN_ID";
     private static final int LOAD_LOCATIONS = 0;
-
+    private boolean mZoomedInOnce = false;
     private GoogleMap mGoogleMap;
     private RunDatabaseHelper.LocationCursor mLocationCursor;
 
@@ -46,8 +47,10 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
             if(!mRunManager.isTrackingRun(mRun))
                 return;
 
-            if(isVisible())
+            if(isVisible()) {
+                mLocationCursor.requery();
                 updateUI(loc);
+            }
         }
 
         @Override
@@ -116,11 +119,13 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
         mLocationCursor = null;
     }
 
-    //TODO last thing I did was add the loc parameter. Double check if it's null. If it's not,
-    //then we are live tracking
     private void updateUI(Location loc) {
         if(mGoogleMap == null || mLocationCursor == null) {
             return;
+        }
+
+        if(loc != null) {
+            mGoogleMap.clear();
         }
 
         // Setup an overlay on the map for this run's locations
@@ -128,6 +133,7 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
         PolylineOptions line = new PolylineOptions();
         // Also create a LatLongBounds so you can zoom to fit
         LatLngBounds.Builder builder = new LatLngBounds.Builder();
+
         // Iterate over the locations
         mLocationCursor.moveToFirst();
 
@@ -147,17 +153,25 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
                 mGoogleMap.addMarker(startMarkerOptions);
             }else if(mLocationCursor.isLast()) {
                 // If this is the last location, and not also the first, add a marker
-                String endDate = new Date(location.getTime()).toString();
-                MarkerOptions finishMarkerOptions = new MarkerOptions()
-                        .position(latLng)
-                        .title(r.getString(R.string.run_finish))
-                        .snippet(r.getString(R.string.run_finished_at_format, endDate));
-                mGoogleMap.addMarker(finishMarkerOptions);
+                // but only if like the location passed in isn't null
+                if(loc == null) {
+                    setLastLocation(location, latLng, r);
+                }
             }
 
             line.add(latLng);
             builder.include(latLng);
+
             mLocationCursor.moveToNext();
+        }
+
+        if(loc != null) {
+            LatLng latLng = new LatLng(loc.getLatitude(), loc.getLongitude());
+            Resources r = getResources();
+            setLastLocation(loc, latLng, r);
+
+            line.add(latLng);
+            builder.include(latLng);
         }
 
         // Add the polyline to the map
@@ -167,9 +181,36 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
         Display display = getActivity().getWindowManager().getDefaultDisplay();
         // Construct a movement instruction for the map camera
         LatLngBounds latLngBounds = builder.build();
+
+        //TODO look at this
+        //http://stackoverflow.com/questions/23041604/how-to-stop-zooming-in-google-map-after-updating-current-location-every-second
+        // may help keep the zoom level proper
         CameraUpdate movement = CameraUpdateFactory.newLatLngBounds(latLngBounds,
                 display.getWidth(), display.getHeight(), 15);
+        float somethign = mGoogleMap.getCameraPosition().zoom;
         mGoogleMap.moveCamera(movement);
+
     }
 
+    private void setLastLocation(Location location, LatLng latLng, Resources r) {
+        String endDate = new Date(location.getTime()).toString();
+        MarkerOptions finishMarkerOptions = new MarkerOptions()
+                .position(latLng)
+                .title(r.getString(R.string.run_finish))
+                .snippet(r.getString(R.string.run_finished_at_format, endDate));
+        mGoogleMap.addMarker(finishMarkerOptions);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        getActivity().registerReceiver(mLocationReceiver,
+                new IntentFilter(RunManager.ACTION_LOCATION));
+    }
+
+    @Override
+    public void onStop() {
+        getActivity().unregisterReceiver(mLocationReceiver);
+        super.onStop();
+    }
 }
