@@ -9,6 +9,7 @@ import android.location.Location;
 import android.os.Bundle;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.Loader;
+import android.util.Log;
 import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -60,6 +61,7 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
         }
     };
     private Run mRun;
+    private String TAG = "RunMapFragment";
 
 
     public static RunMapFragment newInstance(long runId) {
@@ -91,8 +93,9 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
 
         // Stash a reference to the GoogleMap
         mGoogleMap = getMap();
+        mGoogleMap.getUiSettings().setAllGesturesEnabled(false);
         // Show the user's location
-        mGoogleMap.setMyLocationEnabled(true);
+        //mGoogleMap.setMyLocationEnabled(true);
         //mGoogleMap.setLocationSource(this);
         //mGoogleMap.animateCamera(CameraUpdateFactory.zoomTo(8.0f));
 
@@ -150,6 +153,7 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
                         .position(latLng)
                         .title(r.getString(R.string.run_start))
                         .snippet(r.getString(R.string.run_started_at_format, startDate));
+
                 mGoogleMap.addMarker(startMarkerOptions);
             }else if(mLocationCursor.isLast()) {
                 // If this is the last location, and not also the first, add a marker
@@ -182,13 +186,15 @@ public class RunMapFragment extends SupportMapFragment implements LoaderManager.
         // Construct a movement instruction for the map camera
         LatLngBounds latLngBounds = builder.build();
 
-        //TODO look at this
-        //http://stackoverflow.com/questions/23041604/how-to-stop-zooming-in-google-map-after-updating-current-location-every-second
-        // may help keep the zoom level proper
-        CameraUpdate movement = CameraUpdateFactory.newLatLngBounds(latLngBounds,
-                display.getWidth(), display.getHeight(), 15);
-        float somethign = mGoogleMap.getCameraPosition().zoom;
-        mGoogleMap.moveCamera(movement);
+        if(loc == null) {
+            CameraUpdate movement = CameraUpdateFactory.newLatLngBounds(latLngBounds,
+                    display.getWidth(), display.getHeight(), 15);
+            mGoogleMap.moveCamera(movement);
+        }else {
+            float something = mGoogleMap.getCameraPosition().zoom;
+            Log.d(TAG, Float.toString(something));
+            mGoogleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(loc.getLatitude(), loc.getLongitude()), 18));
+        }
 
     }
 

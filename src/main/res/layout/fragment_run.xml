@@ -91,4 +91,15 @@
             android:text="@string/map"
             />
     </LinearLayout>
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_height="match_parent"
+        android:layout_width="match_parent">
+        <fragment
+            android:id="@+id/running_map"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:name="com.google.android.gms.maps.MapFragment"
+            class="com.google.android.gms.maps.SupportMapFragment"/>
+    </LinearLayout>
  </TableLayout>

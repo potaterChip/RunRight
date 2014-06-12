@@ -53,6 +53,7 @@
         <meta-data
             android:name="com.google.android.maps.v2.API_KEY"
             android:value="@string/GoogleMapsKey"/>
+        <uses-library android:name="com.google.android.maps" />
     </application>
 
 </manifest>

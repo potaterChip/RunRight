@@ -1,16 +1,21 @@
 package com.potaterchip.runright;
 
+import android.app.Activity;
 import android.app.Notification;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Resources;
+import android.database.Cursor;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.Loader;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,17 +23,30 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
+
+import java.util.Date;
+
 /**
  * Created by Eric on 4/21/2014.
  */
-public class RunFragment extends Fragment{
+public class RunFragment extends Fragment implements LoaderManager.LoaderCallbacks<Cursor>{
 
     private BroadcastReceiver mLocationReceiver = new LocationReceiver() {
         @Override
         protected void onLocationReceived(Context context, Location loc) {
-            if(!mRunManager.isTrackingRun(mRun))
-                return;
+            //if(!mRunManager.isTrackingRun(mRun))
+              //  return;
             mLastLocation = loc;
+            if(mLocationCursor != null) {
+                mLocationCursor.requery();
+            }
             if(isVisible())
                 updateUI();
         }
@@ -45,10 +63,19 @@ public class RunFragment extends Fragment{
     private TextView mStartedTextView, mLatitudeTextView,
     mLongitudeTextView, mAltitudeTextView, mDurationTextView;
     private RunManager mRunManager;
+    private GoogleMap mGoogleMap;
     private static final String TAG = "RunFragment";
     private static final String ARG_RUN_ID = "RUN_ID";
     private static final int LOAD_RUN = 0;
     private static final int LOAD_LOCATION = 1;
+    private FragmentActivity myContext;
+    private RunDatabaseHelper.LocationCursor mLocationCursor;
+
+    @Override
+    public void onAttach(Activity activity) {
+        myContext = (FragmentActivity)activity;
+        super.onAttach(activity);
+    }
 
     public static RunFragment newInstance(long runId) {
         Bundle args = new Bundle();
@@ -73,7 +100,11 @@ public class RunFragment extends Fragment{
                 lm.initLoader(LOAD_LOCATION, args, new LocationLoaderCallbacks());
             }
         }
+
+        //initMapView();
     }
+
+
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -86,15 +117,22 @@ public class RunFragment extends Fragment{
         mDurationTextView = (TextView)view.findViewById(R.id.run_durationTextView);
 
         mStartButton = (Button)view.findViewById(R.id.run_startButton);
+        final RunFragment fragSaved = this;
         mStartButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if(mRun == null) {
+                if (mRun == null) {
                     mRun = mRunManager.startNewRun();
-                }else {
+                } else {
                     mRunManager.startTrackingRun(mRun);
                 }
-                ((RunActivity)getActivity()).startRunNotification();
+                ((RunActivity) getActivity()).startRunNotification();
+                if(mLocationCursor == null) {
+                    Bundle args = new Bundle();
+                    args.putLong(ARG_RUN_ID, mRun.getId());
+                    LoaderManager lm = getLoaderManager();
+                    lm.initLoader(LOAD_LOCATION, args, fragSaved);
+                }
                 updateUI();
             }
         });
@@ -118,6 +156,9 @@ public class RunFragment extends Fragment{
             }
         });
 
+        mGoogleMap = ((SupportMapFragment)getFragmentManager().findFragmentById(R.id.running_map)).getMap();
+        mGoogleMap.setMyLocationEnabled(true);
+        mRunManager.startLocationUpdates();
         updateUI();
 
         return view;
@@ -140,10 +181,49 @@ public class RunFragment extends Fragment{
         }else {
             mMapButton.setEnabled(false);
         }
+
+        if(mLastLocation != null) {
+            mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(
+                    new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude()), 17.4f));
+
+            if(started && mLocationCursor != null) {
+                //draw the lines
+                drawLinesOnMap();
+            }
+        }
+
         mDurationTextView.setText(Run.formatDuration(durationSeconds));
 
-        mStartButton.setEnabled(!started);
+        mStartButton.setEnabled(!trackingThisRun);
         mStopButton.setEnabled(started && trackingThisRun);
+
+    }
+
+    private void drawLinesOnMap() {
+
+        mGoogleMap.clear();
+        // Setup an overlay on the map for this run's locations
+        // Create a polyline with all all of the points
+        PolylineOptions line = new PolylineOptions();
+        // Also create a LatLongBounds so you can zoom to fit
+        LatLngBounds.Builder builder = new LatLngBounds.Builder();
+
+        // Iterate over the locations
+        mLocationCursor.moveToFirst();
+        while(!mLocationCursor.isAfterLast()) {
+            Location location = mLocationCursor.getLocation();
+            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+
+            Resources r = getResources();
+
+            line.add(latLng);
+            builder.include(latLng);
+
+            mLocationCursor.moveToNext();
+        }
+
+        // Add the polyline to the map
+        mGoogleMap.addPolyline(line);
     }
 
     @Override
@@ -157,6 +237,26 @@ public class RunFragment extends Fragment{
     public void onStop() {
         getActivity().unregisterReceiver(mLocationReceiver);
         super.onStop();
+    }
+
+    @Override
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        long runId = args.getLong(ARG_RUN_ID, -1);
+        return new LocationListCursorLoader(getActivity(), runId);
+    }
+
+
+
+    @Override
+    public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+        mLocationCursor = (RunDatabaseHelper.LocationCursor)data;
+    }
+
+    @Override
+    public void onLoaderReset(Loader<Cursor> loader) {
+        // Stop using the data
+        mLocationCursor.close();
+        mLocationCursor = null;
     }
 
     private class RunLoaderCallbacks implements LoaderManager.LoaderCallbacks<Run> {
